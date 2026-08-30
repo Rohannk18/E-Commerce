@@ -11,11 +11,11 @@ import {
 } from '@commerceflow/shared';
 
 const STORAGE_KEYS = {
-  PRODUCTS: 'cf_mock_products_v2',
-  CATEGORIES: 'cf_mock_categories_v2',
-  ORDERS: 'cf_mock_orders_v2',
-  CART: 'cf_mock_cart_v2',
-  USERS: 'cf_mock_users_v2',
+  PRODUCTS: 'cf_mock_products_v4',
+  CATEGORIES: 'cf_mock_categories_v4',
+  ORDERS: 'cf_mock_orders_v4',
+  CART: 'cf_mock_cart_v4',
+  USERS: 'cf_mock_users_v4',
 };
 
 // Initialize & Retrieve Data
@@ -26,8 +26,14 @@ export const getStoredProducts = (): ProductDTO[] => {
     return INITIAL_PRODUCTS;
   }
   try {
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed) || parsed.length < 20) {
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+      return INITIAL_PRODUCTS;
+    }
+    return parsed;
   } catch {
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
     return INITIAL_PRODUCTS;
   }
 };
@@ -43,8 +49,14 @@ export const getStoredCategories = (): CategoryDTO[] => {
     return INITIAL_CATEGORIES;
   }
   try {
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed) || parsed.length < 6) {
+      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(INITIAL_CATEGORIES));
+      return INITIAL_CATEGORIES;
+    }
+    return parsed;
   } catch {
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(INITIAL_CATEGORIES));
     return INITIAL_CATEGORIES;
   }
 };
@@ -56,7 +68,12 @@ export const getStoredOrders = (): OrderDTO[] => {
     return INITIAL_ORDERS;
   }
   try {
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(INITIAL_ORDERS));
+      return INITIAL_ORDERS;
+    }
+    return parsed;
   } catch {
     return INITIAL_ORDERS;
   }
@@ -104,7 +121,7 @@ export const handleMockRequest = async (config: {
     };
   }
 
-  // 2. Products List & Search/Filters
+  // 2. Products List & Search/Filters (Customer & Admin)
   if (pathname === '/products' && method === 'GET') {
     let products = getStoredProducts();
     const categoryId = config.params?.categoryId || queryParams.get('categoryId');
@@ -113,8 +130,16 @@ export const handleMockRequest = async (config: {
     const minPrice = config.params?.minPrice || queryParams.get('minPrice');
     const maxPrice = config.params?.maxPrice || queryParams.get('maxPrice');
     const inStock = config.params?.inStock || queryParams.get('inStock');
+    const statusParam = config.params?.status || queryParams.get('status');
     const page = Number(config.params?.page || queryParams.get('page') || 1);
-    const limit = Number(config.params?.limit || queryParams.get('limit') || 20);
+    const limit = Number(config.params?.limit || queryParams.get('limit') || 100);
+
+    // Filter by status if specified, otherwise default to active for customer
+    if (statusParam && statusParam !== 'ALL') {
+      products = products.filter((p) => p.status === statusParam);
+    } else if (!statusParam) {
+      products = products.filter((p) => p.status === 'ACTIVE');
+    }
 
     if (categoryId) {
       products = products.filter((p) => p.category_id === Number(categoryId));
@@ -122,7 +147,10 @@ export const handleMockRequest = async (config: {
     if (search) {
       const q = String(search).toLowerCase();
       products = products.filter(
-        (p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) ||
+          p.sku.toLowerCase().includes(q)
       );
     }
     if (minPrice) {
@@ -189,7 +217,122 @@ export const handleMockRequest = async (config: {
     };
   }
 
-  // 4. Authentication Endpoints
+  // 4. Update Product (Admin)
+  if (pathname.startsWith('/products/') && method === 'PUT') {
+    const parts = pathname.split('/');
+    const productId = Number(parts[2]);
+    const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+    const products = getStoredProducts();
+    const product = products.find((p) => p.id === productId);
+
+    if (!product) {
+      return { data: { success: false, message: 'Product not found' }, status: 404, statusText: 'Not Found' };
+    }
+
+    const categories = getStoredCategories();
+    const cat = categories.find((c) => c.id === Number(payload.category_id)) || product.category;
+
+    product.name = payload.name || product.name;
+    product.description = payload.description || product.description;
+    product.price = Number(payload.price ?? product.price);
+    product.stock_quantity = Number(payload.stock_quantity ?? product.stock_quantity);
+    product.sku = payload.sku || product.sku;
+    product.category_id = cat.id;
+    product.category = cat;
+    product.status = payload.status || product.status;
+    if (payload.images) {
+      product.images = payload.images.map((img: any, idx: number) => ({
+        id: idx + 1,
+        product_id: product.id,
+        image_url: img.image_url,
+        is_primary: idx === 0,
+        display_order: idx,
+      }));
+    }
+    product.updated_at = new Date().toISOString();
+
+    saveStoredProducts(products);
+
+    return {
+      data: {
+        success: true,
+        message: 'Product updated successfully',
+        product,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
+  }
+
+  // 5. Delete / Deactivate Product (Admin)
+  if (pathname.startsWith('/products/') && method === 'DELETE') {
+    const parts = pathname.split('/');
+    const productId = Number(parts[2]);
+    const products = getStoredProducts();
+    const product = products.find((p) => p.id === productId);
+
+    if (!product) {
+      return { data: { success: false, message: 'Product not found' }, status: 404, statusText: 'Not Found' };
+    }
+
+    product.status = 'INACTIVE';
+    product.updated_at = new Date().toISOString();
+    saveStoredProducts(products);
+
+    return {
+      data: {
+        success: true,
+        message: `Product '${product.name}' deactivated successfully`,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
+  }
+
+  // 6. Create New Product (Admin)
+  if (pathname === '/products' && method === 'POST') {
+    const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+    const products = getStoredProducts();
+    const categories = getStoredCategories();
+    const cat = categories.find((c) => c.id === Number(payload.category_id)) || categories[0];
+
+    const newProduct: ProductDTO = {
+      id: Math.floor(Math.random() * 1000) + 100,
+      name: payload.name,
+      slug: payload.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      description: payload.description,
+      price: Number(payload.price),
+      stock_quantity: Number(payload.stock_quantity),
+      sku: payload.sku,
+      category_id: cat.id,
+      status: payload.status || 'ACTIVE',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      category: cat,
+      images: payload.images?.map((img: any, idx: number) => ({
+        id: idx + 1,
+        product_id: 100,
+        image_url: img.image_url,
+        is_primary: idx === 0,
+        display_order: idx,
+      })) || [],
+    };
+
+    products.unshift(newProduct);
+    saveStoredProducts(products);
+
+    return {
+      data: {
+        success: true,
+        message: 'Product created successfully',
+        product: newProduct,
+      },
+      status: 201,
+      statusText: 'Created',
+    };
+  }
+
+  // 7. Authentication Endpoints
   if (pathname === '/auth/login' && method === 'POST') {
     const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
     const email = payload?.email || 'customer@commerceflow.com';
@@ -250,7 +393,7 @@ export const handleMockRequest = async (config: {
     };
   }
 
-  // 5. Cart Operations
+  // 8. Cart Operations
   if (pathname === '/cart' && method === 'GET') {
     const items = getStoredCart();
     const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
@@ -322,7 +465,7 @@ export const handleMockRequest = async (config: {
     return { data: { success: true, message: 'Item removed from cart' }, status: 200, statusText: 'OK' };
   }
 
-  // 6. Checkout & Orders
+  // 9. Checkout & Orders
   if (pathname === '/orders/checkout' && method === 'POST') {
     const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
     const cartItems = getStoredCart();
@@ -430,7 +573,7 @@ export const handleMockRequest = async (config: {
     };
   }
 
-  // 7. Admin Hub
+  // 10. Admin Hub & Dashboard
   if (pathname === '/admin/dashboard' && method === 'GET') {
     const orders = getStoredOrders();
     const products = getStoredProducts();
@@ -445,7 +588,7 @@ export const handleMockRequest = async (config: {
       return {
         category: cat.name,
         count: prods.length,
-        revenue: prods.reduce((sum, p) => sum + p.price * (10 - p.stock_quantity > 0 ? 10 - p.stock_quantity : 2), 0),
+        revenue: prods.reduce((sum, p) => sum + p.price * 2, 0),
       };
     });
 
@@ -541,48 +684,6 @@ export const handleMockRequest = async (config: {
       },
       status: 200,
       statusText: 'OK',
-    };
-  }
-
-  if (pathname === '/products' && method === 'POST') {
-    const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-    const products = getStoredProducts();
-    const categories = getStoredCategories();
-    const cat = categories.find((c) => c.id === Number(payload.category_id)) || categories[0];
-
-    const newProduct: ProductDTO = {
-      id: Math.floor(Math.random() * 1000) + 100,
-      name: payload.name,
-      slug: payload.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      description: payload.description,
-      price: Number(payload.price),
-      stock_quantity: Number(payload.stock_quantity),
-      sku: payload.sku,
-      category_id: cat.id,
-      status: 'ACTIVE',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      category: cat,
-      images: payload.images?.map((img: any, idx: number) => ({
-        id: idx + 1,
-        product_id: 100,
-        image_url: img.image_url,
-        is_primary: idx === 0,
-        display_order: idx,
-      })) || [],
-    };
-
-    products.unshift(newProduct);
-    saveStoredProducts(products);
-
-    return {
-      data: {
-        success: true,
-        message: 'Product created successfully',
-        product: newProduct,
-      },
-      status: 201,
-      statusText: 'Created',
     };
   }
 
