@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npm run db:generate && npm --prefix apps/web run build",
+  "buildCommand": "npx prisma generate --schema=./prisma/schema.prisma && npm --prefix apps/web run build",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {

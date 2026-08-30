@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "db:generate": "npx prisma generate --schema=../../prisma/schema.prisma"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

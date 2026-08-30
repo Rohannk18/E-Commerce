@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:generate": "npx prisma generate --schema=../../prisma/schema.prisma"
   },
   "dependencies": {
     "axios": "^1.7.7",

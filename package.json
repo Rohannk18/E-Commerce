@@ -7,15 +7,16 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run db:generate && npm --prefix apps/web run build",
-    "vercel-build": "npm run db:generate && npm --prefix apps/web run build",
+    "build": "npx prisma generate --schema=./prisma/schema.prisma && npm --prefix apps/web run build",
+    "vercel-build": "npx prisma generate --schema=./prisma/schema.prisma && npm --prefix apps/web run build",
+    "postinstall": "npx prisma generate --schema=./prisma/schema.prisma",
     "dev:api": "npm --prefix apps/api run dev",
     "dev:web": "npm --prefix apps/web run dev",
     "build:api": "npm --prefix apps/api run build",
     "build:web": "npm --prefix apps/web run build",
-    "db:push": "npx prisma db push --schema=prisma/schema.prisma",
+    "db:push": "npx prisma db push --schema=./prisma/schema.prisma",
     "db:seed": "npx tsx prisma/seed.ts",
-    "db:generate": "npx prisma generate --schema=prisma/schema.prisma"
+    "db:generate": "npx prisma generate --schema=./prisma/schema.prisma"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"
