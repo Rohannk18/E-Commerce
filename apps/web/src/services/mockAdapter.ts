@@ -7,22 +7,18 @@ import {
   ProductDTO,
   CategoryDTO,
   OrderDTO,
-  CartDTO,
   OrderStatus,
-  ORDER_STATUS_TRANSITIONS,
-  getNextAllowedStatuses,
 } from '@commerceflow/shared';
 
-// Local Storage Keys
 const STORAGE_KEYS = {
-  PRODUCTS: 'cf_mock_products_v1',
-  CATEGORIES: 'cf_mock_categories_v1',
-  ORDERS: 'cf_mock_orders_v1',
-  CART: 'cf_mock_cart_v1',
-  USERS: 'cf_mock_users_v1',
+  PRODUCTS: 'cf_mock_products_v2',
+  CATEGORIES: 'cf_mock_categories_v2',
+  ORDERS: 'cf_mock_orders_v2',
+  CART: 'cf_mock_cart_v2',
+  USERS: 'cf_mock_users_v2',
 };
 
-// Initialize default state
+// Initialize & Retrieve Data
 export const getStoredProducts = (): ProductDTO[] => {
   const data = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
   if (!data) {
@@ -93,23 +89,32 @@ export const handleMockRequest = async (config: {
   const method = (config.method || 'GET').toUpperCase();
   const url = (config.url || '').replace(/^\/api/, '');
   const [pathname, queryString] = url.split('?');
-  const params = new URLSearchParams(queryString || '');
+  const queryParams = new URLSearchParams(queryString || '');
 
   // 1. Categories
   if (pathname === '/categories' && method === 'GET') {
-    return { data: getStoredCategories(), status: 200, statusText: 'OK' };
+    const categories = getStoredCategories();
+    return {
+      data: {
+        success: true,
+        categories,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
   }
 
-  // 2. Products List & Filters
+  // 2. Products List & Search/Filters
   if (pathname === '/products' && method === 'GET') {
     let products = getStoredProducts();
-    const categoryId = config.params?.categoryId || params.get('categoryId');
-    const search = config.params?.search || config.params?.q || params.get('search') || params.get('q');
-    const sort = config.params?.sort || params.get('sort');
-    const minPrice = config.params?.minPrice || params.get('minPrice');
-    const maxPrice = config.params?.maxPrice || params.get('maxPrice');
-    const page = Number(config.params?.page || params.get('page') || 1);
-    const limit = Number(config.params?.limit || params.get('limit') || 20);
+    const categoryId = config.params?.categoryId || queryParams.get('categoryId');
+    const search = config.params?.search || config.params?.q || queryParams.get('search') || queryParams.get('q');
+    const sort = config.params?.sort || queryParams.get('sort');
+    const minPrice = config.params?.minPrice || queryParams.get('minPrice');
+    const maxPrice = config.params?.maxPrice || queryParams.get('maxPrice');
+    const inStock = config.params?.inStock || queryParams.get('inStock');
+    const page = Number(config.params?.page || queryParams.get('page') || 1);
+    const limit = Number(config.params?.limit || queryParams.get('limit') || 20);
 
     if (categoryId) {
       products = products.filter((p) => p.category_id === Number(categoryId));
@@ -126,6 +131,9 @@ export const handleMockRequest = async (config: {
     if (maxPrice) {
       products = products.filter((p) => p.price <= Number(maxPrice));
     }
+    if (inStock === 'true') {
+      products = products.filter((p) => p.stock_quantity > 0);
+    }
 
     if (sort === 'price-low') {
       products.sort((a, b) => a.price - b.price);
@@ -140,11 +148,18 @@ export const handleMockRequest = async (config: {
 
     return {
       data: {
+        success: true,
         products: paginated,
         total,
         page,
         limit,
         totalPages,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages,
+        },
       },
       status: 200,
       statusText: 'OK',
@@ -155,16 +170,23 @@ export const handleMockRequest = async (config: {
   if (pathname.startsWith('/products/') && method === 'GET') {
     const parts = pathname.split('/');
     const identifier = parts[2];
-    const isSlug = parts[1] === 'products' && isNaN(Number(identifier));
+    const isSlug = isNaN(Number(identifier));
     const products = getStoredProducts();
     const product = isSlug
       ? products.find((p) => p.slug === identifier)
       : products.find((p) => p.id === Number(identifier));
 
     if (!product) {
-      return { data: { message: 'Product not found' }, status: 404, statusText: 'Not Found' };
+      return { data: { success: false, message: 'Product not found' }, status: 404, statusText: 'Not Found' };
     }
-    return { data: product, status: 200, statusText: 'OK' };
+    return {
+      data: {
+        success: true,
+        product,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
   }
 
   // 4. Authentication Endpoints
@@ -180,7 +202,16 @@ export const handleMockRequest = async (config: {
       role: isAdmin ? 'ADMIN' : 'CUSTOMER',
     };
     const token = 'mock_jwt_token_' + btoa(JSON.stringify(user));
-    return { data: { token, user, message: 'Login successful' }, status: 200, statusText: 'OK' };
+    return {
+      data: {
+        success: true,
+        token,
+        user,
+        message: 'Login successful',
+      },
+      status: 200,
+      statusText: 'OK',
+    };
   }
 
   if (pathname === '/auth/register' && method === 'POST') {
@@ -192,7 +223,16 @@ export const handleMockRequest = async (config: {
       role: 'CUSTOMER',
     };
     const token = 'mock_jwt_token_' + btoa(JSON.stringify(user));
-    return { data: { token, user, message: 'Registration successful' }, status: 201, statusText: 'Created' };
+    return {
+      data: {
+        success: true,
+        token,
+        user,
+        message: 'Registration successful',
+      },
+      status: 201,
+      statusText: 'Created',
+    };
   }
 
   if (pathname === '/auth/me' && method === 'GET') {
@@ -200,19 +240,30 @@ export const handleMockRequest = async (config: {
     const user = storedUser
       ? JSON.parse(storedUser)
       : { id: 2, name: 'Rohan Sharma', email: 'customer@commerceflow.com', role: 'CUSTOMER' };
-    return { data: { user }, status: 200, statusText: 'OK' };
+    return {
+      data: {
+        success: true,
+        user,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
   }
 
   // 5. Cart Operations
   if (pathname === '/cart' && method === 'GET') {
     const items = getStoredCart();
     const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
     return {
       data: {
-        id: 1,
-        items,
-        subtotal,
-        itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+        success: true,
+        cart: {
+          id: 1,
+          items,
+          subtotal,
+          itemCount,
+        },
       },
       status: 200,
       statusText: 'OK',
@@ -225,7 +276,7 @@ export const handleMockRequest = async (config: {
     const product = products.find((p) => p.id === Number(payload.product_id));
 
     if (!product) {
-      return { data: { message: 'Product not found' }, status: 404, statusText: 'Not Found' };
+      return { data: { success: false, message: 'Product not found' }, status: 404, statusText: 'Not Found' };
     }
 
     const items = getStoredCart();
@@ -245,7 +296,7 @@ export const handleMockRequest = async (config: {
     }
 
     saveStoredCart(items);
-    return { data: { message: 'Item added to cart' }, status: 200, statusText: 'OK' };
+    return { data: { success: true, message: 'Item added to cart' }, status: 200, statusText: 'OK' };
   }
 
   if (pathname.startsWith('/cart/items/') && method === 'PUT') {
@@ -259,7 +310,7 @@ export const handleMockRequest = async (config: {
       item.quantity = Number(payload.quantity);
       saveStoredCart(items);
     }
-    return { data: { message: 'Cart updated' }, status: 200, statusText: 'OK' };
+    return { data: { success: true, message: 'Cart updated' }, status: 200, statusText: 'OK' };
   }
 
   if (pathname.startsWith('/cart/items/') && method === 'DELETE') {
@@ -268,7 +319,7 @@ export const handleMockRequest = async (config: {
     let items = getStoredCart();
     items = items.filter((i) => i.id !== itemId && i.product_id !== itemId);
     saveStoredCart(items);
-    return { data: { message: 'Item removed from cart' }, status: 200, statusText: 'OK' };
+    return { data: { success: true, message: 'Item removed from cart' }, status: 200, statusText: 'OK' };
   }
 
   // 6. Checkout & Orders
@@ -277,7 +328,7 @@ export const handleMockRequest = async (config: {
     const cartItems = getStoredCart();
 
     if (cartItems.length === 0) {
-      return { data: { message: 'Your cart is empty.' }, status: 400, statusText: 'Bad Request' };
+      return { data: { success: false, message: 'Your cart is empty.' }, status: 400, statusText: 'Bad Request' };
     }
 
     const products = getStoredProducts();
@@ -338,12 +389,27 @@ export const handleMockRequest = async (config: {
     saveStoredOrders(orders);
     saveStoredCart([]); // Clear cart
 
-    return { data: newOrder, status: 201, statusText: 'Created' };
+    return {
+      data: {
+        success: true,
+        message: 'Order created successfully',
+        order: newOrder,
+      },
+      status: 201,
+      statusText: 'Created',
+    };
   }
 
   if (pathname === '/orders' && method === 'GET') {
     const orders = getStoredOrders();
-    return { data: orders, status: 200, statusText: 'OK' };
+    return {
+      data: {
+        success: true,
+        orders,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
   }
 
   if (pathname.startsWith('/orders/') && method === 'GET') {
@@ -352,28 +418,50 @@ export const handleMockRequest = async (config: {
     const orders = getStoredOrders();
     const order = orders.find((o) => o.id === orderId);
     if (!order) {
-      return { data: { message: 'Order not found' }, status: 404, statusText: 'Not Found' };
+      return { data: { success: false, message: 'Order not found' }, status: 404, statusText: 'Not Found' };
     }
-    return { data: order, status: 200, statusText: 'OK' };
+    return {
+      data: {
+        success: true,
+        order,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
   }
 
   // 7. Admin Hub
   if (pathname === '/admin/dashboard' && method === 'GET') {
     const orders = getStoredOrders();
     const products = getStoredProducts();
-    const revenue = orders.reduce((sum, o) => (o.payment_status === 'PAID' ? sum + o.total_amount : sum), 0);
-    const lowStock = products.filter((p) => p.stock_quantity <= 5).length;
+    const categories = getStoredCategories();
+
+    const totalRevenue = orders.reduce((sum, o) => (o.payment_status === 'PAID' ? sum + o.total_amount : sum), 0);
+    const lowStockProducts = products.filter((p) => p.stock_quantity <= 5).length;
+    const pendingOrders = orders.filter((o) => o.order_status === 'PENDING').length;
+
+    const categoryBreakdown = categories.map((cat) => {
+      const prods = products.filter((p) => p.category_id === cat.id);
+      return {
+        category: cat.name,
+        count: prods.length,
+        revenue: prods.reduce((sum, p) => sum + p.price * (10 - p.stock_quantity > 0 ? 10 - p.stock_quantity : 2), 0),
+      };
+    });
 
     return {
       data: {
+        success: true,
         metrics: {
-          revenue,
-          orders: orders.length,
-          products: products.length,
-          lowStock,
+          totalRevenue,
+          totalOrders: orders.length,
+          totalCustomers: 2,
+          totalProducts: products.length,
+          pendingOrders,
+          lowStockProducts,
+          recentOrders: orders.slice(0, 6),
+          categoryBreakdown,
         },
-        recentOrders: orders.slice(0, 5),
-        lowStockProducts: products.filter((p) => p.stock_quantity <= 5),
       },
       status: 200,
       statusText: 'OK',
@@ -382,9 +470,23 @@ export const handleMockRequest = async (config: {
 
   if (pathname === '/admin/orders' && method === 'GET') {
     const orders = getStoredOrders();
-    const status = config.params?.status || params.get('status');
+    const status = config.params?.status || queryParams.get('status');
     const filtered = status && status !== 'ALL' ? orders.filter((o) => o.order_status === status) : orders;
-    return { data: { orders: filtered, total: filtered.length }, status: 200, statusText: 'OK' };
+    return {
+      data: {
+        success: true,
+        orders: filtered,
+        total: filtered.length,
+        pagination: {
+          total: filtered.length,
+          page: 1,
+          limit: 100,
+          totalPages: 1,
+        },
+      },
+      status: 200,
+      statusText: 'OK',
+    };
   }
 
   if (pathname.startsWith('/admin/orders/') && pathname.endsWith('/status') && method === 'PUT') {
@@ -397,14 +499,49 @@ export const handleMockRequest = async (config: {
     const order = orders.find((o) => o.id === orderId);
 
     if (!order) {
-      return { data: { message: 'Order not found' }, status: 404, statusText: 'Not Found' };
+      return { data: { success: false, message: 'Order not found' }, status: 404, statusText: 'Not Found' };
     }
 
     order.order_status = nextStatus;
     order.updated_at = new Date().toISOString();
     saveStoredOrders(orders);
 
-    return { data: { message: `Order transitioned to ${nextStatus}`, order }, status: 200, statusText: 'OK' };
+    return {
+      data: {
+        success: true,
+        message: `Order status successfully updated to '${nextStatus}'`,
+        order,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
+  }
+
+  if (pathname === '/admin/inventory' && method === 'GET') {
+    const products = getStoredProducts();
+    return {
+      data: {
+        success: true,
+        products,
+        total: products.length,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
+  }
+
+  if (pathname === '/admin/customers' && method === 'GET') {
+    return {
+      data: {
+        success: true,
+        customers: [
+          { id: 2, name: 'Rohan Sharma', email: 'customer@commerceflow.com', role: 'CUSTOMER', ordersCount: 2, totalSpent: 55497, created_at: new Date().toISOString() },
+          { id: 3, name: 'Sarah Connor', email: 'sarah.c@example.com', role: 'CUSTOMER', ordersCount: 1, totalSpent: 24999, created_at: new Date().toISOString() },
+        ],
+      },
+      status: 200,
+      statusText: 'OK',
+    };
   }
 
   if (pathname === '/products' && method === 'POST') {
@@ -438,8 +575,16 @@ export const handleMockRequest = async (config: {
     products.unshift(newProduct);
     saveStoredProducts(products);
 
-    return { data: newProduct, status: 201, statusText: 'Created' };
+    return {
+      data: {
+        success: true,
+        message: 'Product created successfully',
+        product: newProduct,
+      },
+      status: 201,
+      statusText: 'Created',
+    };
   }
 
-  return { data: { message: 'Not found' }, status: 404, statusText: 'Not Found' };
+  return { data: { success: false, message: 'Not found' }, status: 404, statusText: 'Not Found' };
 };
