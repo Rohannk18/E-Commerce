@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { handleMockRequest } from './mockAdapter';
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -17,10 +18,34 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor for error normalization
+// Response interceptor with automatic client-side fallback if backend API is unreachable
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    // If request failed with 404, network error, or connection refused (e.g. static host on Netlify)
+    const isNetworkOr404 =
+      !error.response ||
+      error.response.status === 404 ||
+      error.code === 'ERR_NETWORK' ||
+      error.message?.includes('Network Error');
+
+    if (isNetworkOr404 && error.config) {
+      try {
+        const mockRes = await handleMockRequest(error.config);
+        if (mockRes.status >= 200 && mockRes.status < 300) {
+          return {
+            data: mockRes.data,
+            status: mockRes.status,
+            statusText: mockRes.statusText,
+            headers: {},
+            config: error.config,
+          };
+        }
+      } catch (mockErr) {
+        console.warn('Mock adapter fallback error:', mockErr);
+      }
+    }
+
     const message =
       error.response?.data?.message ||
       error.message ||
