@@ -7,8 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npx prisma generate --schema=./prisma/schema.prisma && npm --prefix apps/web run build",
-    "vercel-build": "npx prisma generate --schema=./prisma/schema.prisma && npm --prefix apps/web run build",
+    "build": "npx prisma generate --schema=./prisma/schema.prisma && npm --prefix apps/web run build && node -e \"const fs=require('fs'); fs.cpSync('apps/web/dist', 'dist', {recursive: true});\"",
+    "vercel-build": "npx prisma generate --schema=./prisma/schema.prisma && npm --prefix apps/web run build && node -e \"const fs=require('fs'); fs.cpSync('apps/web/dist', 'dist', {recursive: true});\"",
     "postinstall": "npx prisma generate --schema=./prisma/schema.prisma",
     "dev:api": "npm --prefix apps/api run dev",
     "dev:web": "npm --prefix apps/web run dev",

@@ -1,6 +1,5 @@
 {
-  "buildCommand": "npx prisma generate --schema=./prisma/schema.prisma && npm --prefix apps/web run build",
-  "outputDirectory": "apps/web/dist",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/(.*)",
