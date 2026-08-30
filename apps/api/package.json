@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "build": "tsc && node -e \"const fs=require('fs'); if (!fs.existsSync('dist')) fs.mkdirSync('dist'); fs.copyFileSync('public/index.html', 'dist/index.html');\""
+    "build": "tsc && node -e \"const fs=require('fs'); if (!fs.existsSync('dist')) fs.mkdirSync('dist'); fs.copyFileSync('public/index.html', 'dist/index.html');\"",
+    "db:generate": "node -e \"process.exit(0)\""
   },
   "dependencies": {
     "@commerceflow/shared": "*",
