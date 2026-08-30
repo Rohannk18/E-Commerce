@@ -34,9 +34,11 @@ app.use(errorHandler);
 
 const PORT = config.port;
 
-app.listen(PORT, () => {
-  console.log(`🚀 CommerceFlow API server running on http://localhost:${PORT}`);
-  console.log(`📡 Connected to database with environment: ${config.nodeEnv}`);
-});
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 CommerceFlow API server running on http://localhost:${PORT}`);
+    console.log(`📡 Connected to database with environment: ${config.nodeEnv}`);
+  });
+}
 
 export default app;

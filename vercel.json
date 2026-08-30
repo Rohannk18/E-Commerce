@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "buildCommand": "npm run db:generate && npm --prefix apps/web run build",
+  "outputDirectory": "apps/web/dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
