@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "build": "tsc",
+    "build": "npx prisma generate --schema=../../prisma/schema.prisma && tsc",
+    "vercel-build": "npx prisma generate --schema=../../prisma/schema.prisma && tsc",
     "db:generate": "npx prisma generate --schema=../../prisma/schema.prisma"
   },
   "dependencies": {
