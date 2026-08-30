@@ -10,6 +10,7 @@
     "db:generate": "npx prisma generate --schema=../../prisma/schema.prisma"
   },
   "dependencies": {
+    "@commerceflow/shared": "*",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",

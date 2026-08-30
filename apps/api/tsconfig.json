@@ -9,12 +9,15 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": false,
     "outDir": "./dist",
-    "rootDir": "./src",
     "esModuleInterop": true,
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "baseUrl": "./"
+    "baseUrl": "./",
+    "paths": {
+      "@commerceflow/shared": ["../../packages/shared/src/index.ts"],
+      "@commerceflow/shared/*": ["../../packages/shared/src/*"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../../packages/shared/src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

@@ -14,8 +14,13 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "baseUrl": "./",
+    "paths": {
+      "@commerceflow/shared": ["../../packages/shared/src/index.ts"],
+      "@commerceflow/shared/*": ["../../packages/shared/src/*"]
+    }
   },
-  "include": ["src"],
+  "include": ["src", "../../packages/shared/src"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
