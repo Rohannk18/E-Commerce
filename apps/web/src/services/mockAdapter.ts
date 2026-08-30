@@ -16,7 +16,41 @@ const STORAGE_KEYS = {
   ORDERS: 'cf_mock_orders_v5',
   CART: 'cf_mock_cart_v5',
   USERS: 'cf_mock_users_v5',
+  INVENTORY_LOGS: 'cf_mock_inventory_logs_v5',
 };
+
+const INITIAL_INVENTORY_LOGS = [
+  {
+    id: 1,
+    product_id: 1,
+    previous_stock: 0,
+    new_stock: 15,
+    change_amount: 15,
+    reason: 'Initial seed restock',
+    created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+    product: { id: 1, name: 'TitanPro 5G Ultra Flagship (256GB)', sku: 'CF-MOB-001' },
+  },
+  {
+    id: 2,
+    product_id: 6,
+    previous_stock: 15,
+    new_stock: 14,
+    change_amount: -1,
+    reason: 'Order #CF-058211294 Placed - Stock Allocated',
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    product: { id: 6, name: 'FlowSound Nova Pro Wireless ANC Headphones', sku: 'CF-AUD-001' },
+  },
+  {
+    id: 3,
+    product_id: 16,
+    previous_stock: 25,
+    new_stock: 22,
+    change_amount: -3,
+    reason: 'Order #CF-941827453 Placed - Stock Allocated',
+    created_at: new Date(Date.now() - 1800000).toISOString(),
+    product: { id: 16, name: 'VoltForge 25,000mAh 140W PD3.1 Laptop Powerbank', sku: 'CF-PWR-001' },
+  },
+];
 
 // Initialize & Retrieve Data
 export const getStoredProducts = (): ProductDTO[] => {
@@ -95,6 +129,24 @@ export const getStoredCart = (): any[] => {
 
 export const saveStoredCart = (items: any[]) => {
   localStorage.setItem(STORAGE_KEYS.CART, JSON.stringify(items));
+};
+
+export const getStoredInventoryLogs = (): any[] => {
+  const data = localStorage.getItem(STORAGE_KEYS.INVENTORY_LOGS);
+  if (!data) {
+    localStorage.setItem(STORAGE_KEYS.INVENTORY_LOGS, JSON.stringify(INITIAL_INVENTORY_LOGS));
+    return INITIAL_INVENTORY_LOGS;
+  }
+  try {
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : INITIAL_INVENTORY_LOGS;
+  } catch {
+    return INITIAL_INVENTORY_LOGS;
+  }
+};
+
+export const saveStoredInventoryLogs = (logs: any[]) => {
+  localStorage.setItem(STORAGE_KEYS.INVENTORY_LOGS, JSON.stringify(logs));
 };
 
 export const handleMockRequest = async (config: {
@@ -342,6 +394,24 @@ export const handleMockRequest = async (config: {
     products.unshift(newProduct);
     saveStoredProducts(products);
 
+    // Also create initial inventory log
+    const logs = getStoredInventoryLogs();
+    logs.unshift({
+      id: Date.now(),
+      product_id: newProduct.id,
+      previous_stock: 0,
+      new_stock: newProduct.stock_quantity,
+      change_amount: newProduct.stock_quantity,
+      reason: 'New Product Created & Initial Restock',
+      created_at: new Date().toISOString(),
+      product: {
+        id: newProduct.id,
+        name: newProduct.name,
+        sku: newProduct.sku,
+      },
+    });
+    saveStoredInventoryLogs(logs);
+
     return {
       data: {
         success: true,
@@ -539,21 +609,28 @@ export const handleMockRequest = async (config: {
     return { data: { success: true, message: 'Cart cleared' }, status: 200, statusText: 'OK' };
   }
 
-  // 9. Checkout & Order Placement
+  // 9. Checkout & Order Placement (with Inventory Audit Logging)
   if (pathname === '/orders/checkout' && method === 'POST') {
     const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
     const rawCartItems = getStoredCart();
     const products = getStoredProducts();
+    const logs = getStoredInventoryLogs();
 
     const orderItems: any[] = [];
     let subtotal = 0;
+    const orderNumber = 'CF-' + Math.floor(100000000 + Math.random() * 900000000);
 
     for (const item of rawCartItems) {
       const pId = Number(item.productId || item.product_id || item.id);
       const prod = products.find((p) => p.id === pId);
       if (prod) {
         const qty = Number(item.quantity || 1);
-        prod.stock_quantity = Math.max(0, prod.stock_quantity - qty);
+        const previousStock = prod.stock_quantity;
+        const newStock = Math.max(0, prod.stock_quantity - qty);
+        prod.stock_quantity = newStock;
+        if (newStock === 0) prod.status = 'OUT_OF_STOCK';
+        prod.updated_at = new Date().toISOString();
+
         subtotal += prod.price * qty;
         orderItems.push({
           id: Date.now() + Math.floor(Math.random() * 100),
@@ -567,6 +644,22 @@ export const handleMockRequest = async (config: {
           quantity: qty,
           price: prod.price,
         });
+
+        // Audit Log for Order Deduction
+        logs.unshift({
+          id: Date.now() + Math.floor(Math.random() * 1000),
+          product_id: prod.id,
+          previous_stock: previousStock,
+          new_stock: newStock,
+          change_amount: -qty,
+          reason: `Order #${orderNumber} Placed - Stock Deducted`,
+          created_at: new Date().toISOString(),
+          product: {
+            id: prod.id,
+            name: prod.name,
+            sku: prod.sku,
+          },
+        });
       }
     }
 
@@ -575,8 +668,8 @@ export const handleMockRequest = async (config: {
     }
 
     saveStoredProducts(products); // Save updated stock quantities
+    saveStoredInventoryLogs(logs); // Save audit logs
 
-    const orderNumber = 'CF-' + Math.floor(100000000 + Math.random() * 900000000);
     const newOrder: OrderDTO = {
       id: Date.now(),
       order_number: orderNumber,
@@ -768,13 +861,117 @@ export const handleMockRequest = async (config: {
     };
   }
 
+  // 12. Admin Inventory & Concurrency Monitor
   if (pathname === '/admin/inventory' && method === 'GET') {
-    const products = getStoredProducts();
+    let products = getStoredProducts();
+    const search = config.params?.search || queryParams.get('search');
+    const lowStockOnly = config.params?.lowStockOnly || queryParams.get('lowStockOnly');
+
+    if (lowStockOnly === 'true') {
+      products = products.filter((p) => p.stock_quantity <= 5);
+    }
+
+    if (search) {
+      const q = String(search).toLowerCase().trim();
+      products = products.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.sku.toLowerCase().includes(q) ||
+          p.category?.name.toLowerCase().includes(q)
+      );
+    }
+
+    const inventory = products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      category: p.category?.name || 'General',
+      price: p.price,
+      stock_quantity: p.stock_quantity,
+      status: p.status,
+      isLowStock: p.stock_quantity <= 5,
+      image: p.images?.[0]?.image_url || null,
+      updated_at: p.updated_at,
+    }));
+
     return {
       data: {
         success: true,
+        inventory,
         products,
-        total: products.length,
+        total: inventory.length,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
+  }
+
+  // 13. Admin Inventory Logs & Audit Trail
+  if (pathname === '/admin/inventory/logs' && method === 'GET') {
+    const logs = getStoredInventoryLogs();
+    const productId = config.params?.productId || queryParams.get('productId');
+    const filtered = productId
+      ? logs.filter((l) => l.product_id === Number(productId))
+      : logs;
+
+    return {
+      data: {
+        success: true,
+        logs: filtered,
+        total: filtered.length,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
+  }
+
+  // 14. Admin Stock Adjustments
+  if (pathname.startsWith('/admin/inventory/') && method === 'PUT') {
+    const parts = pathname.split('/');
+    const productId = Number(parts[3]);
+    const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+    const newStock = parseInt(payload?.new_stock, 10);
+    const reason = payload?.reason || 'Manual Inventory Adjustment';
+
+    const products = getStoredProducts();
+    const product = products.find((p) => p.id === productId);
+
+    if (!product) {
+      return { data: { success: false, message: 'Product not found' }, status: 404, statusText: 'Not Found' };
+    }
+
+    const previousStock = product.stock_quantity;
+    const diff = newStock - previousStock;
+    product.stock_quantity = newStock;
+    product.status = newStock === 0 ? 'OUT_OF_STOCK' : product.status === 'OUT_OF_STOCK' ? 'ACTIVE' : product.status;
+    product.updated_at = new Date().toISOString();
+    saveStoredProducts(products);
+
+    // Create Audit Log
+    const logs = getStoredInventoryLogs();
+    const newLog = {
+      id: Date.now(),
+      product_id: product.id,
+      previous_stock: previousStock,
+      new_stock: newStock,
+      change_amount: diff,
+      reason,
+      created_at: new Date().toISOString(),
+      product: {
+        id: product.id,
+        name: product.name,
+        sku: product.sku,
+      },
+    };
+    logs.unshift(newLog);
+    saveStoredInventoryLogs(logs);
+
+    return {
+      data: {
+        success: true,
+        message: `Inventory for '${product.name}' updated to ${newStock} units.`,
+        product,
+        log: newLog,
       },
       status: 200,
       statusText: 'OK',
