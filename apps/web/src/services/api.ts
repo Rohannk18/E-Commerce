@@ -1,5 +1,31 @@
-import axios from 'axios';
+import axios, { AxiosAdapter, InternalAxiosRequestConfig } from 'axios';
 import { handleMockRequest } from './mockAdapter';
+
+const HAS_CUSTOM_BACKEND = Boolean(import.meta.env.VITE_API_URL);
+
+// Custom client-side mock adapter for static deployments (Netlify/Vercel)
+const clientStorageAdapter: AxiosAdapter = async (config: InternalAxiosRequestConfig) => {
+  try {
+    const res = await handleMockRequest(config);
+    return {
+      data: res.data,
+      status: res.status,
+      statusText: res.statusText,
+      headers: {},
+      config,
+    };
+  } catch (err: any) {
+    return Promise.reject({
+      response: {
+        data: { message: err.message || 'Storage engine error' },
+        status: 500,
+        statusText: 'Internal Server Error',
+        headers: {},
+        config,
+      },
+    });
+  }
+};
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -7,6 +33,7 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  adapter: HAS_CUSTOM_BACKEND ? undefined : clientStorageAdapter,
 });
 
 // Inject JWT token from localStorage if available
@@ -18,18 +45,11 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor with automatic client-side fallback if backend API is unreachable
+// Response interceptor with automatic client-side fallback if custom backend API is unreachable
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    // If request failed with 404, network error, or connection refused (e.g. static host on Netlify)
-    const isNetworkOr404 =
-      !error.response ||
-      error.response.status === 404 ||
-      error.code === 'ERR_NETWORK' ||
-      error.message?.includes('Network Error');
-
-    if (isNetworkOr404 && error.config) {
+    if (HAS_CUSTOM_BACKEND && error.config) {
       try {
         const mockRes = await handleMockRequest(error.config);
         if (mockRes.status >= 200 && mockRes.status < 300) {

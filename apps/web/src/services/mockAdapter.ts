@@ -11,11 +11,11 @@ import {
 } from '@commerceflow/shared';
 
 const STORAGE_KEYS = {
-  PRODUCTS: 'cf_mock_products_v4',
-  CATEGORIES: 'cf_mock_categories_v4',
-  ORDERS: 'cf_mock_orders_v4',
-  CART: 'cf_mock_cart_v4',
-  USERS: 'cf_mock_users_v4',
+  PRODUCTS: 'cf_mock_products_v5',
+  CATEGORIES: 'cf_mock_categories_v5',
+  ORDERS: 'cf_mock_orders_v5',
+  CART: 'cf_mock_cart_v5',
+  USERS: 'cf_mock_users_v5',
 };
 
 // Initialize & Retrieve Data
@@ -294,28 +294,49 @@ export const handleMockRequest = async (config: {
     const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
     const products = getStoredProducts();
     const categories = getStoredCategories();
-    const cat = categories.find((c) => c.id === Number(payload.category_id)) || categories[0];
+    const parsedCatId = Number(payload.category_id) || 1;
+    const cat = categories.find((c) => c.id === parsedCatId) || categories[0] || {
+      id: 1,
+      name: 'General',
+      slug: 'general',
+      description: '',
+      created_at: new Date().toISOString(),
+    };
 
+    const newProductId = Date.now();
     const newProduct: ProductDTO = {
-      id: Math.floor(Math.random() * 1000) + 100,
-      name: payload.name,
-      slug: payload.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      description: payload.description,
-      price: Number(payload.price),
-      stock_quantity: Number(payload.stock_quantity),
-      sku: payload.sku,
+      id: newProductId,
+      name: payload.name || 'New Tech Product',
+      slug: (payload.name || 'new-tech-product')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, ''),
+      description: payload.description || '',
+      price: Number(payload.price) || 999,
+      stock_quantity: Number(payload.stock_quantity) || 10,
+      sku: payload.sku || 'CF-' + Math.floor(1000 + Math.random() * 9000),
       category_id: cat.id,
       status: payload.status || 'ACTIVE',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       category: cat,
-      images: payload.images?.map((img: any, idx: number) => ({
-        id: idx + 1,
-        product_id: 100,
-        image_url: img.image_url,
-        is_primary: idx === 0,
-        display_order: idx,
-      })) || [],
+      images: payload.images?.length
+        ? payload.images.map((img: any, idx: number) => ({
+            id: idx + 1,
+            product_id: newProductId,
+            image_url: img.image_url,
+            is_primary: idx === 0,
+            display_order: idx,
+          }))
+        : [
+            {
+              id: 1,
+              product_id: newProductId,
+              image_url: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=800&q=80',
+              is_primary: true,
+              display_order: 0,
+            },
+          ],
     };
 
     products.unshift(newProduct);
