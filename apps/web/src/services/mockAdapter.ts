@@ -414,19 +414,59 @@ export const handleMockRequest = async (config: {
     };
   }
 
-  // 8. Cart Operations
+  // 8. Cart Operations (Unified & Synchronized)
   if (pathname === '/cart' && method === 'GET') {
-    const items = getStoredCart();
-    const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-    const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+    const rawItems = getStoredCart();
+    const products = getStoredProducts();
+
+    const items = rawItems
+      .map((item: any) => {
+        const pId = Number(item.productId || item.product_id || item.id);
+        const prod = products.find((p) => p.id === pId);
+        if (!prod) return null;
+        const img =
+          prod.images?.[0]?.image_url ||
+          'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80';
+        const qty = Number(item.quantity || 1);
+
+        return {
+          id: item.id || prod.id,
+          cart_id: 1,
+          product_id: prod.id,
+          quantity: qty,
+          product: {
+            id: prod.id,
+            name: prod.name,
+            slug: prod.slug,
+            price: prod.price,
+            stock_quantity: prod.stock_quantity,
+            sku: prod.sku,
+            status: prod.status,
+            image: img,
+          },
+          itemTotal: prod.price * qty,
+          isStockAvailable: prod.stock_quantity >= qty,
+          isProductActive: prod.status === 'ACTIVE',
+        };
+      })
+      .filter(Boolean);
+
+    const subtotal = items.reduce((sum, item: any) => sum + item.itemTotal, 0);
+    const shipping_fee = subtotal > 1000 || subtotal === 0 ? 0 : 99;
+    const total = subtotal + shipping_fee;
+    const item_count = items.reduce((sum, item: any) => sum + item.quantity, 0);
+
     return {
       data: {
         success: true,
         cart: {
           id: 1,
+          user_id: 2,
           items,
           subtotal,
-          itemCount,
+          shipping_fee,
+          total,
+          item_count,
         },
       },
       status: 200,
@@ -436,26 +476,30 @@ export const handleMockRequest = async (config: {
 
   if (pathname === '/cart/items' && method === 'POST') {
     const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+    const prodId = Number(payload?.productId || payload?.product_id || payload?.id);
+    const qty = Number(payload?.quantity || 1);
+
     const products = getStoredProducts();
-    const product = products.find((p) => p.id === Number(payload.product_id));
+    const product = products.find((p) => p.id === prodId);
 
     if (!product) {
       return { data: { success: false, message: 'Product not found' }, status: 404, statusText: 'Not Found' };
     }
 
     const items = getStoredCart();
-    const existingIndex = items.findIndex((i) => i.product_id === product.id);
-    const addQty = Number(payload.quantity || 1);
+    const existingIndex = items.findIndex(
+      (i) => Number(i.productId || i.product_id) === prodId
+    );
 
     if (existingIndex > -1) {
-      items[existingIndex].quantity += addQty;
+      items[existingIndex].quantity += qty;
     } else {
       items.push({
-        id: Math.floor(Math.random() * 1000) + 1,
+        id: Date.now(),
         cart_id: 1,
         product_id: product.id,
-        quantity: addQty,
-        product,
+        productId: product.id,
+        quantity: qty,
       });
     }
 
@@ -468,7 +512,9 @@ export const handleMockRequest = async (config: {
     const itemId = Number(parts[3]);
     const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
     const items = getStoredCart();
-    const item = items.find((i) => i.id === itemId || i.product_id === itemId);
+    const item = items.find(
+      (i) => Number(i.id) === itemId || Number(i.productId || i.product_id) === itemId
+    );
 
     if (item) {
       item.quantity = Number(payload.quantity);
@@ -481,40 +527,63 @@ export const handleMockRequest = async (config: {
     const parts = pathname.split('/');
     const itemId = Number(parts[3]);
     let items = getStoredCart();
-    items = items.filter((i) => i.id !== itemId && i.product_id !== itemId);
+    items = items.filter(
+      (i) => Number(i.id) !== itemId && Number(i.productId || i.product_id) !== itemId
+    );
     saveStoredCart(items);
     return { data: { success: true, message: 'Item removed from cart' }, status: 200, statusText: 'OK' };
   }
 
-  // 9. Checkout & Orders
+  if (pathname === '/cart' && method === 'DELETE') {
+    saveStoredCart([]);
+    return { data: { success: true, message: 'Cart cleared' }, status: 200, statusText: 'OK' };
+  }
+
+  // 9. Checkout & Order Placement
   if (pathname === '/orders/checkout' && method === 'POST') {
     const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-    const cartItems = getStoredCart();
+    const rawCartItems = getStoredCart();
+    const products = getStoredProducts();
 
-    if (cartItems.length === 0) {
+    const orderItems: any[] = [];
+    let subtotal = 0;
+
+    for (const item of rawCartItems) {
+      const pId = Number(item.productId || item.product_id || item.id);
+      const prod = products.find((p) => p.id === pId);
+      if (prod) {
+        const qty = Number(item.quantity || 1);
+        prod.stock_quantity = Math.max(0, prod.stock_quantity - qty);
+        subtotal += prod.price * qty;
+        orderItems.push({
+          id: Date.now() + Math.floor(Math.random() * 100),
+          order_id: 1,
+          product_id: prod.id,
+          product_name: prod.name,
+          product_sku: prod.sku,
+          product_image:
+            prod.images?.[0]?.image_url ||
+            'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80',
+          quantity: qty,
+          price: prod.price,
+        });
+      }
+    }
+
+    if (orderItems.length === 0) {
       return { data: { success: false, message: 'Your cart is empty.' }, status: 400, statusText: 'Bad Request' };
     }
 
-    const products = getStoredProducts();
-    // Decrement stock
-    cartItems.forEach((ci) => {
-      const p = products.find((prod) => prod.id === ci.product_id);
-      if (p) {
-        p.stock_quantity = Math.max(0, p.stock_quantity - ci.quantity);
-      }
-    });
-    saveStoredProducts(products);
+    saveStoredProducts(products); // Save updated stock quantities
 
-    const subtotal = cartItems.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
     const orderNumber = 'CF-' + Math.floor(100000000 + Math.random() * 900000000);
-
     const newOrder: OrderDTO = {
-      id: Math.floor(Math.random() * 1000) + 10,
+      id: Date.now(),
       order_number: orderNumber,
       user_id: 2,
       shipping_name: payload.shipping_name || 'Rohan Sharma',
       shipping_phone: payload.shipping_phone || '+91 98765 43210',
-      shipping_address: payload.shipping_address || 'MG Road',
+      shipping_address: payload.shipping_address || 'Flat 402, Skyline Residency, MG Road',
       shipping_city: payload.shipping_city || 'Bengaluru',
       shipping_state: payload.shipping_state || 'Karnataka',
       shipping_postal: payload.shipping_postal || '560001',
@@ -525,19 +594,10 @@ export const handleMockRequest = async (config: {
       order_status: 'PENDING',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      items: cartItems.map((ci, idx) => ({
-        id: idx + 1,
-        order_id: 1,
-        product_id: ci.product_id,
-        product_name: ci.product.name,
-        product_sku: ci.product.sku,
-        product_image: ci.product.images?.[0]?.image_url,
-        quantity: ci.quantity,
-        price: ci.product.price,
-      })),
+      items: orderItems,
       payments: [
         {
-          id: 1,
+          id: Date.now(),
           order_id: 1,
           payment_method: payload.payment_method || 'CREDIT_CARD',
           payment_status: 'PAID',
@@ -551,7 +611,7 @@ export const handleMockRequest = async (config: {
     const orders = getStoredOrders();
     orders.unshift(newOrder);
     saveStoredOrders(orders);
-    saveStoredCart([]); // Clear cart
+    saveStoredCart([]); // Clear cart after checkout
 
     return {
       data: {
@@ -564,6 +624,7 @@ export const handleMockRequest = async (config: {
     };
   }
 
+  // 10. Orders Listing & Details (Customer & Admin)
   if (pathname === '/orders' && method === 'GET') {
     const orders = getStoredOrders();
     return {
@@ -576,7 +637,7 @@ export const handleMockRequest = async (config: {
     };
   }
 
-  if (pathname.startsWith('/orders/') && method === 'GET') {
+  if (pathname.startsWith('/orders/') && !pathname.includes('/status') && !pathname.includes('/cancel') && method === 'GET') {
     const parts = pathname.split('/');
     const orderId = Number(parts[2]);
     const orders = getStoredOrders();
@@ -594,7 +655,32 @@ export const handleMockRequest = async (config: {
     };
   }
 
-  // 10. Admin Hub & Dashboard
+  if (pathname.startsWith('/orders/') && pathname.endsWith('/cancel') && method === 'PUT') {
+    const parts = pathname.split('/');
+    const orderId = Number(parts[2]);
+    const orders = getStoredOrders();
+    const order = orders.find((o) => o.id === orderId);
+
+    if (!order) {
+      return { data: { success: false, message: 'Order not found' }, status: 404, statusText: 'Not Found' };
+    }
+
+    order.order_status = 'CANCELLED';
+    order.updated_at = new Date().toISOString();
+    saveStoredOrders(orders);
+
+    return {
+      data: {
+        success: true,
+        message: 'Order cancelled successfully',
+        order,
+      },
+      status: 200,
+      statusText: 'OK',
+    };
+  }
+
+  // 11. Admin Hub, Dashboard & Fulfillment Pipeline
   if (pathname === '/admin/dashboard' && method === 'GET') {
     const orders = getStoredOrders();
     const products = getStoredProducts();
@@ -653,6 +739,7 @@ export const handleMockRequest = async (config: {
     };
   }
 
+  // Admin Processing Order Status (State Machine)
   if (pathname.startsWith('/admin/orders/') && pathname.endsWith('/status') && method === 'PUT') {
     const parts = pathname.split('/');
     const orderId = Number(parts[3]);
