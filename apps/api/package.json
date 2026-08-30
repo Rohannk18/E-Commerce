@@ -6,9 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "build": "npx prisma generate --schema=../../prisma/schema.prisma && tsc && node -e \"const fs=require('fs'); if (!fs.existsSync('dist')) fs.mkdirSync('dist'); fs.copyFileSync('public/index.html', 'dist/index.html');\"",
-    "vercel-build": "npx prisma generate --schema=../../prisma/schema.prisma && tsc && node -e \"const fs=require('fs'); if (!fs.existsSync('dist')) fs.mkdirSync('dist'); fs.copyFileSync('public/index.html', 'dist/index.html');\"",
-    "db:generate": "npx prisma generate --schema=../../prisma/schema.prisma"
+    "build": "tsc && node -e \"const fs=require('fs'); if (!fs.existsSync('dist')) fs.mkdirSync('dist'); fs.copyFileSync('public/index.html', 'dist/index.html');\""
   },
   "dependencies": {
     "@commerceflow/shared": "*",
