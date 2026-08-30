@@ -29,6 +29,16 @@ if (config.nodeEnv === 'development') {
 // API Routes
 app.use('/api', routes);
 
+// Welcome Root Endpoint
+app.get('/', (req, res) => {
+  res.status(200).json({
+    service: 'CommerceFlow Backend API',
+    status: 'online',
+    version: '1.0.0',
+    documentation: '/api/health',
+  });
+});
+
 // Centralized error handler
 app.use(errorHandler);
 
